@@ -1,0 +1,76 @@
+name: Sync slim mirror
+
+# Rebuilds this repo's tree to be "upstream minus docs/ and minus all image
+# and video files", so the whole thing stays a few MB and can be imported
+# (and refreshed) as a skill source without tripping the 100 MB zip limit.
+
+on:
+  schedule:
+    - cron: "17 6 * * *"        # daily, 06:17 UTC
+  workflow_dispatch:            # ...or hit "Run workflow" for an instant refresh
+
+permissions:
+  contents: write
+
+env:
+  UPSTREAM: https://github.com/K-Dense-AI/scientific-agent-skills.git
+  UPSTREAM_BRANCH: main
+  TARGET_BRANCH: main
+
+jobs:
+  sync:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out mirror
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Rebuild slim tree from upstream
+        run: |
+          set -euo pipefail
+
+          git config user.name  "slim-mirror-bot"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+
+          # Preserve this workflow (and anything else we own) across the rebuild.
+          rm -rf /tmp/keep && mkdir -p /tmp/keep
+          cp -r .github /tmp/keep/.github
+
+          git remote add upstream "$UPSTREAM" 2>/dev/null \
+            || git remote set-url upstream "$UPSTREAM"
+          git fetch --no-tags upstream "$UPSTREAM_BRANCH"
+          UP_SHA="$(git rev-parse --short upstream/"$UPSTREAM_BRANCH")"
+
+          # Replace our tree wholesale with upstream's, on top of our own history.
+          git checkout -B "$TARGET_BRANCH"
+          git rm -rqf . --ignore-unmatch
+          git checkout upstream/"$UPSTREAM_BRANCH" -- .
+
+          # ---- strip what the skill import does not need ----
+          rm -rf docs
+          find . -type f -not -path './.git/*' \
+              \( -iname '*.png'  -o -iname '*.jpg'  -o -iname '*.jpeg' \
+              -o -iname '*.gif'  -o -iname '*.webp' -o -iname '*.svg'  \
+              -o -iname '*.mp4'  -o -iname '*.mov'  -o -iname '*.pdf'  \
+              -o -iname '*.ico' \) -print -delete
+
+          # restore our own .github
+          rm -rf .github && cp -r /tmp/keep/.github .github
+
+          git add -A
+          if git diff --cached --quiet; then
+            echo "No upstream changes since last sync ($UP_SHA)."
+            exit 0
+          fi
+
+          SIZE="$(du -sh --exclude=.git . | cut -f1)"
+          N_SKILLS="$(find skills -maxdepth 2 -name SKILL.md | wc -l)"
+          git commit -m "slim mirror of upstream ${UP_SHA} (${N_SKILLS} skills, ${SIZE})"
+          git push origin "$TARGET_BRANCH"
+
+      - name: Report tree size
+        run: |
+          echo "### Slim mirror" >> "$GITHUB_STEP_SUMMARY"
+          echo "- skills: $(find skills -maxdepth 2 -name SKILL.md | wc -l)" >> "$GITHUB_STEP_SUMMARY"
+          echo "- tree size: $(du -sh --exclude=.git . | cut -f1)" >> "$GITHUB_STEP_SUMMARY"
