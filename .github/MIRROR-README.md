@@ -29,7 +29,10 @@ Note that only 1.6 MB of imagery lives under `skills/` (4 files in
    > Use a *new repo*, **not a fork**. GitHub disables scheduled workflows in
    > forked repositories, so a fork would never auto-refresh.
 
-2. Add this file and `.github/workflows/sync-slim-mirror.yml` to it, and push.
+2. Add `.github/workflows/sync-slim-mirror.yml` to it, and push. If you want to
+   keep this explainer in the repo too, put it at `.github/MIRROR-README.md` —
+   **not** at the repo root, which the sync overwrites with upstream's
+   `README.md`. Everything under `.github/` survives each sync.
 
 3. Run the workflow once by hand: **Actions → Sync slim mirror → Run
    workflow**. It fetches upstream, deletes `docs/` and any image/video files,
